@@ -1,0 +1,81 @@
+<title>Jive Moves Graph — Visual Theme Prototypes</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #graph-container { position: fixed; inset: 0; }
+  #graph-container canvas { display: block; }
+
+  #hud {
+    position: fixed; top: 20px; left: 20px; z-index: 5;
+    pointer-events: none; transition: opacity 0.3s ease;
+    max-width: 280px;
+  }
+  #hud .title {
+    font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+    opacity: 0.55; margin-bottom: 10px; font-weight: 600;
+  }
+  #legend { display: flex; flex-direction: column; gap: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+  #variant-name {
+    position: fixed; top: 20px; right: 20px; z-index: 5;
+    text-align: right; pointer-events: none;
+  }
+  #variant-name .k { font-size: 11px; letter-spacing: 0.1em; opacity: 0.5; }
+  #variant-name .n { font-size: 20px; font-weight: 600; margin-top: 2px; }
+  #variant-name .d { font-size: 12px; opacity: 0.6; margin-top: 4px; max-width: 260px; }
+
+  #orbit-toggle {
+    position: fixed; bottom: 92px; right: 20px; z-index: 6;
+    padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(0,0,0,0.4); color: inherit; font-size: 12px; cursor: pointer;
+    backdrop-filter: blur(6px); letter-spacing: 0.03em;
+  }
+  #orbit-toggle:hover { background: rgba(255,255,255,0.12); }
+
+  #switcher {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    z-index: 10; display: flex; align-items: center; gap: 14px;
+    background: rgba(15,15,20,0.72); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 999px; padding: 8px 10px 8px 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+    font-family: system-ui, -apple-system, sans-serif; color: #fff;
+  }
+  #switcher button.arrow {
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(255,255,255,0.12); color: #fff; font-size: 15px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.28); }
+  #switcher .label { font-size: 13px; min-width: 190px; text-align: center; }
+  #switcher .label b { font-weight: 600; }
+  #switcher .label span.env { display:block; font-size: 10px; opacity: 0.5; margin-top: 2px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  #tooltip {
+    position: fixed; z-index: 8; pointer-events: none; display: none;
+    padding: 6px 10px; border-radius: 6px; font-size: 12px;
+    background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; backdrop-filter: blur(4px);
+  }
+</style>
+
+<div id="graph-container"></div>
+<div id="hud">
+  <div class="title">Move families</div>
+  <div id="legend"></div>
+</div>
+<div id="variant-name">
+  <div class="k">THEME</div>
+  <div class="n" id="variant-name-n"></div>
+  <div class="d" id="variant-name-d"></div>
+</div>
+<button id="orbit-toggle">Auto-orbit: off</button>
+<div id="tooltip"></div>
+
+<div id="switcher">
+  <button class="arrow" id="prev">&#8592;</button>
+  <div class="label"><b id="switcher-label"></b><span class="env" id="switcher-env">prototype — throwaway, not production</span></div>
+  <button class="arrow" id="next">&#8594;</button>
+</div>
