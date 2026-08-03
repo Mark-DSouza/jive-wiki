@@ -3,6 +3,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph'
 import * as THREE from 'three'
 import {
+  CameraControlPrototypeSwitcher,
+  useCameraVariant,
+  type CameraVariantKey,
+} from './CameraControlPrototype.tsx'
+import {
   CLUSTER_IDS,
   findNode,
   type GraphLink,
@@ -12,6 +17,59 @@ import {
 import DetailPanel from './DetailPanel.tsx'
 import { loadGraphData } from './loadMoves.ts'
 import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
+
+// PROTOTYPE hook, part of issue #19 — see CameraControlPrototype.tsx.
+// `controls()` is typed `object` upstream; this is the subset of
+// TrackballControls' API the prototype variants tune.
+interface TrackballControlsLike {
+  noPan: boolean
+  rotateSpeed: number
+  panSpeed: number
+  zoomSpeed: number
+  dynamicDampingFactor: number
+  addEventListener: (type: string, listener: () => void) => void
+  removeEventListener: (type: string, listener: () => void) => void
+}
+
+function configureCameraControls(
+  controls: TrackballControlsLike,
+  variant: CameraVariantKey,
+  setAutoOrbitEnabled: (enabled: boolean) => void,
+): () => void {
+  if (variant === 'A') {
+    return () => {
+      /* baseline: no camera-control tuning, nothing to tear down */
+    }
+  }
+
+  if (variant === 'B') {
+    controls.noPan = true
+    controls.rotateSpeed = 0.6
+  } else {
+    controls.panSpeed = 0.15
+    controls.zoomSpeed = 1.0
+  }
+
+  let resumeTimeout: ReturnType<typeof setTimeout> | undefined
+  const handleStart = () => {
+    clearTimeout(resumeTimeout)
+    setAutoOrbitEnabled(false)
+  }
+  const handleEnd = () => {
+    const resumeDelayMs = variant === 'B' ? 600 : 0
+    resumeTimeout = setTimeout(() => {
+      setAutoOrbitEnabled(true)
+    }, resumeDelayMs)
+  }
+  controls.addEventListener('start', handleStart)
+  controls.addEventListener('end', handleEnd)
+
+  return () => {
+    clearTimeout(resumeTimeout)
+    controls.removeEventListener('start', handleStart)
+    controls.removeEventListener('end', handleEnd)
+  }
+}
 
 function flyToNode(
   graph: ForceGraph3DInstance<GraphNode, GraphLink>,
@@ -73,6 +131,7 @@ function GraphView() {
     null,
   )
   const graphData = useMemo(() => loadGraphData(), [])
+  const [cameraVariant, setCameraVariant] = useCameraVariant()
   const [openNodeId, setOpenNodeId] = useState<string | null>(null)
   const [displayedNodeId, setDisplayedNodeId] = useState<string | null>(null)
   const isPanelOpen = openNodeId !== null
@@ -148,6 +207,14 @@ function GraphView() {
     const initialCamera = graph.cameraPosition()
     let orbitAngle = Math.atan2(initialCamera.x, initialCamera.z) || 0
     let autoOrbitEnabled = true
+    const setAutoOrbitEnabled = (enabled: boolean) => {
+      autoOrbitEnabled = enabled
+    }
+    const teardownCameraControls = configureCameraControls(
+      graph.controls() as unknown as TrackballControlsLike,
+      cameraVariant,
+      setAutoOrbitEnabled,
+    )
     graph.onEngineTick(() => {
       if (!autoOrbitEnabled) return
       orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
@@ -168,9 +235,7 @@ function GraphView() {
     graphRef.current = graph
     window.__jiveGraph = graph
     window.__jiveGraphControls = {
-      setAutoOrbitEnabled: (enabled) => {
-        autoOrbitEnabled = enabled
-      },
+      setAutoOrbitEnabled,
       isLayoutStable: () => isLayoutStable,
     }
 
@@ -181,6 +246,7 @@ function GraphView() {
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      teardownCameraControls()
       delete window.__jiveGraph
       delete window.__jiveGraphControls
       graphRef.current = null
@@ -188,7 +254,7 @@ function GraphView() {
       // (frees the WebGL context/renderer) despite the underscore prefix.
       graph._destructor()
     }
-  }, [graphData])
+  }, [graphData, cameraVariant])
 
   return (
     <div style={wrapperStyle}>
@@ -227,6 +293,10 @@ function GraphView() {
           </div>
         ))}
       </div>
+      <CameraControlPrototypeSwitcher
+        variant={cameraVariant}
+        onChange={setCameraVariant}
+      />
     </div>
   )
 }
