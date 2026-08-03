@@ -12,11 +12,20 @@ export const CLUSTER_IDS = [
 
 export type ClusterId = (typeof CLUSTER_IDS)[number]
 
+export interface MoveTemplate {
+  description: string
+  steps: string
+  holdHandPosition: string
+  lead: string
+  notes: string
+}
+
 export interface GraphNode {
   id: string
   name: string
   cluster: ClusterId
   degree: number
+  template: MoveTemplate
 }
 
 export interface GraphLink {
@@ -27,6 +36,24 @@ export interface GraphLink {
 export interface GraphData {
   nodes: GraphNode[]
   links: GraphLink[]
+}
+
+export function findNode(
+  graphData: GraphData,
+  id: string,
+): GraphNode | undefined {
+  return graphData.nodes.find((node) => node.id === id)
+}
+
+/**
+ * Once a GraphNode is handed to 3d-force-graph, the force simulation
+ * mutates it in place, adding a live x/y/z position (and velocity/fixed
+ * fields we don't use). This type names that runtime-augmented shape.
+ */
+export type PositionedGraphNode = GraphNode & {
+  x?: number
+  y?: number
+  z?: number
 }
 
 function matchFrontmatterField(
@@ -79,6 +106,41 @@ function parseTransitionsOut(filename: string, content: string): string[] {
   return inner.split(',').map((entry) => entry.trim())
 }
 
+const TEMPLATE_SECTION_HEADERS: {
+  field: keyof MoveTemplate
+  header: string
+}[] = [
+  { field: 'description', header: 'Description' },
+  { field: 'steps', header: 'Steps' },
+  { field: 'holdHandPosition', header: 'Hold/hand position' },
+  { field: 'lead', header: 'Lead' },
+  { field: 'notes', header: 'Notes/variations' },
+]
+
+function parseBody(content: string): string {
+  const match = /^---\n[\s\S]*?\n---\n([\s\S]*)$/.exec(content)
+  return match ? match[1] : content
+}
+
+function parseSection(body: string, header: string): string {
+  // No 'm' flag: `$` must mean end-of-string here, not end-of-line (which
+  // would wrongly match the blank line right after an empty section header).
+  const pattern = new RegExp(
+    `(?:^|\\n)## ${header}[ \\t]*\\n([\\s\\S]*?)(?=\\n## |$)`,
+  )
+  const match = pattern.exec(body)
+  return match ? match[1].trim() : ''
+}
+
+function parseTemplate(content: string): MoveTemplate {
+  const body = parseBody(content)
+  const template = {} as MoveTemplate
+  for (const { field, header } of TEMPLATE_SECTION_HEADERS) {
+    template[field] = parseSection(body, header)
+  }
+  return template
+}
+
 function slugify(filename: string): string {
   return filename.replace(/\.md$/, '').toLowerCase()
 }
@@ -102,6 +164,7 @@ export function compileGraph(files: MoveFile[]): GraphData {
     name: parseName(file.filename, file.content),
     cluster: parseCluster(file.filename, file.content),
     degree: 0,
+    template: parseTemplate(file.content),
   }))
 
   const slugs = new Set(nodes.map((node) => node.id))

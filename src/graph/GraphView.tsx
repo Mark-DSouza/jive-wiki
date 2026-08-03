@@ -1,10 +1,31 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph'
 import * as THREE from 'three'
-import { CLUSTER_IDS, type GraphLink, type GraphNode } from './compileGraph.ts'
+import {
+  CLUSTER_IDS,
+  findNode,
+  type GraphLink,
+  type GraphNode,
+  type PositionedGraphNode,
+} from './compileGraph.ts'
+import DetailPanel from './DetailPanel.tsx'
 import { loadGraphData } from './loadMoves.ts'
 import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
+
+function flyToNode(
+  graph: ForceGraph3DInstance<GraphNode, GraphLink>,
+  node: PositionedGraphNode,
+): void {
+  const { x = 0, y = 0, z = 0 } = node
+  const distRatio =
+    1 + obsidianVoid.flyToDistance / Math.hypot(x || 1, y || 1, z || 1)
+  graph.cameraPosition(
+    { x: x * distRatio, y: y * distRatio, z: z * distRatio },
+    { x, y, z },
+    obsidianVoid.flyToEaseMs,
+  )
+}
 
 function addStarfield(scene: THREE.Scene, count: number): void {
   const positions = new Float32Array(count * 3)
@@ -48,7 +69,42 @@ function makeNodeObject(node: GraphNode): THREE.Object3D {
 
 function GraphView() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const graphRef = useRef<ForceGraph3DInstance<GraphNode, GraphLink> | null>(
+    null,
+  )
   const graphData = useMemo(() => loadGraphData(), [])
+  const [openNodeId, setOpenNodeId] = useState<string | null>(null)
+  const [displayedNodeId, setDisplayedNodeId] = useState<string | null>(null)
+  const isPanelOpen = openNodeId !== null
+  // Keep showing the last-open move's content while the panel slides out,
+  // rather than clearing it (which would flash an empty panel mid-animation).
+  if (openNodeId !== null && openNodeId !== displayedNodeId) {
+    setDisplayedNodeId(openNodeId)
+  }
+
+  // useLayoutEffect, not useEffect: this must attach in the same commit as
+  // the DOM update that opens the panel. useEffect is scheduled after paint
+  // and can be starved by the continuous WebGL render loop's rAF callbacks,
+  // leaving a window where a fast Escape press lands before the listener
+  // exists.
+  useLayoutEffect(() => {
+    if (!isPanelOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenNodeId(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isPanelOpen])
+
+  function handleSelectMove(id: string): void {
+    const graph = graphRef.current
+    const node = findNode(graphData, id)
+    if (graph && node) flyToNode(graph, node)
+    setOpenNodeId(id)
+  }
 
   useEffect(() => {
     const container = containerRef.current
@@ -59,7 +115,16 @@ function GraphView() {
     ) as unknown as ForceGraph3DInstance<GraphNode, GraphLink>
 
     graph
-      .graphData(graphData)
+      // three-forcegraph mutates each link in place, replacing its
+      // string source/target with the resolved node object. Hand it
+      // link copies so that mutation doesn't corrupt the pristine
+      // `graphData.links` that DetailPanel reads by string id; the
+      // nodes array is intentionally shared, since DetailPanel and the
+      // engine are both meant to see nodes' live x/y/z positions.
+      .graphData({
+        nodes: graphData.nodes,
+        links: graphData.links.map((link) => ({ ...link })),
+      })
       .width(container.clientWidth)
       .height(container.clientHeight)
       .backgroundColor(obsidianVoid.bg)
@@ -70,12 +135,21 @@ function GraphView() {
       .linkWidth(obsidianVoid.linkWidth)
       .linkDirectionalArrowLength(obsidianVoid.arrowLength)
       .linkDirectionalArrowRelPos(1)
+      .onNodeClick((node) => {
+        flyToNode(graph, node)
+        setOpenNodeId(node.id)
+      })
+      .onBackgroundClick(() => {
+        setOpenNodeId(null)
+      })
 
     addStarfield(graph.scene(), obsidianVoid.starCount)
 
     const initialCamera = graph.cameraPosition()
     let orbitAngle = Math.atan2(initialCamera.x, initialCamera.z) || 0
+    let autoOrbitEnabled = true
     graph.onEngineTick(() => {
+      if (!autoOrbitEnabled) return
       orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
       const camPos = graph.cameraPosition()
       const radius = Math.hypot(camPos.x, camPos.z) || 260
@@ -86,7 +160,19 @@ function GraphView() {
       })
     })
 
+    let isLayoutStable = false
+    graph.onEngineStop(() => {
+      isLayoutStable = true
+    })
+
+    graphRef.current = graph
     window.__jiveGraph = graph
+    window.__jiveGraphControls = {
+      setAutoOrbitEnabled: (enabled) => {
+        autoOrbitEnabled = enabled
+      },
+      isLayoutStable: () => isLayoutStable,
+    }
 
     const handleResize = () => {
       graph.width(container.clientWidth).height(container.clientHeight)
@@ -96,6 +182,8 @@ function GraphView() {
     return () => {
       window.removeEventListener('resize', handleResize)
       delete window.__jiveGraph
+      delete window.__jiveGraphControls
+      graphRef.current = null
       // `_destructor` is 3d-force-graph's own documented teardown method
       // (frees the WebGL context/renderer) despite the underscore prefix.
       graph._destructor()
@@ -104,7 +192,23 @@ function GraphView() {
 
   return (
     <div style={wrapperStyle}>
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <div
+        ref={containerRef}
+        data-testid="graph-canvas-container"
+        style={{
+          ...canvasContainerStyle,
+          filter: isPanelOpen ? obsidianVoid.dimmedFilter : 'none',
+        }}
+      />
+      <DetailPanel
+        graphData={graphData}
+        isOpen={isPanelOpen}
+        moveId={displayedNodeId}
+        onClose={() => {
+          setOpenNodeId(null)
+        }}
+        onSelectMove={handleSelectMove}
+      />
       <div data-testid="graph-legend" style={legendStyle}>
         {CLUSTER_IDS.map((clusterId) => (
           <div
@@ -132,6 +236,12 @@ const wrapperStyle: CSSProperties = {
   width: '100%',
   height: '100%',
   fontFamily: obsidianVoid.fontFamily,
+}
+
+const canvasContainerStyle: CSSProperties = {
+  width: '100%',
+  height: '100%',
+  transition: 'filter 0.4s ease',
 }
 
 const legendStyle: CSSProperties = {

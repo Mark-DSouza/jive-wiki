@@ -23,4 +23,7 @@ export const obsidianVoid = {
   autoOrbitSpeed: 0.1,
   starCount: 900,
   fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  flyToDistance: 130,
+  flyToEaseMs: 900,
+  dimmedFilter: 'brightness(0.35) blur(1px)',
 } as const
