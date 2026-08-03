@@ -1,0 +1,175 @@
+<title>Jive Moves Graph — Node Click-to-Detail Prototypes</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #05060a; color: #f4f4f5; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+  #graph-container { position: fixed; inset: 0; transition: filter 0.4s ease, opacity 0.4s ease; }
+  #graph-container canvas { display: block; }
+  #graph-container.dimmed { filter: brightness(0.35) blur(1px); }
+  #graph-container.hidden-page { opacity: 0; pointer-events: none; }
+
+  #hud {
+    position: fixed; top: 20px; left: 20px; z-index: 5;
+    pointer-events: none; max-width: 280px;
+  }
+  #hud .title {
+    font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+    opacity: 0.55; margin-bottom: 10px; font-weight: 600;
+  }
+  #legend { display: flex; flex-direction: column; gap: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+  #variant-name {
+    position: fixed; top: 20px; right: 20px; z-index: 5;
+    text-align: right; pointer-events: none;
+  }
+  #variant-name .k { font-size: 11px; letter-spacing: 0.1em; opacity: 0.5; }
+  #variant-name .n { font-size: 20px; font-weight: 600; margin-top: 2px; }
+  #variant-name .d { font-size: 12px; opacity: 0.6; margin-top: 4px; max-width: 300px; }
+
+  #hint {
+    position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
+    z-index: 4; font-size: 12px; opacity: 0.45; pointer-events: none;
+    letter-spacing: 0.02em;
+  }
+
+  #switcher {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    z-index: 20; display: flex; align-items: center; gap: 14px;
+    background: rgba(15,15,20,0.72); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 999px; padding: 8px 10px 8px 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+    color: #fff;
+  }
+  #switcher button.arrow {
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(255,255,255,0.12); color: #fff; font-size: 15px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #switcher button.arrow:hover { background: rgba(255,255,255,0.28); }
+  #switcher .label { font-size: 13px; min-width: 220px; text-align: center; }
+  #switcher .label b { font-weight: 600; }
+  #switcher .label span.env { display:block; font-size: 10px; opacity: 0.5; margin-top: 2px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  #tooltip {
+    position: fixed; z-index: 8; pointer-events: none; display: none;
+    padding: 6px 10px; border-radius: 6px; font-size: 12px;
+    background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; backdrop-filter: blur(4px);
+  }
+
+  /* ---- shared detail-content typography, reused by all three variants ---- */
+  .detail-content h2 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  .detail-content .cluster-tag { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; margin-bottom: 18px; }
+  .detail-content section { margin-bottom: 18px; }
+  .detail-content section h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; font-weight: 600; margin: 0 0 6px; }
+  .detail-content section .body { font-size: 14px; line-height: 1.55; opacity: 0.92; }
+  .detail-content section .body ul { margin: 0; padding-left: 18px; }
+  .detail-content section .body li { margin-bottom: 3px; }
+  .detail-content section.empty .body { opacity: 0.35; font-style: italic; }
+  .transition-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 8px;
+    border-radius: 999px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.05);
+    font-size: 13px; cursor: pointer; margin: 0 6px 6px 0; color: inherit;
+  }
+  .transition-chip:hover { background: rgba(255,255,255,0.14); }
+  .transition-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .close-btn {
+    border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: inherit;
+    border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .close-btn:hover { background: rgba(255,255,255,0.16); }
+
+  /* ---- Variant A: overlay side panel ---- */
+  #panel-a {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 88vw;
+    background: rgba(10,11,16,0.82); backdrop-filter: blur(16px);
+    border-left: 1px solid rgba(255,255,255,0.1);
+    box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+    z-index: 15; padding: 26px 24px; overflow-y: auto;
+    transform: translateX(100%); transition: transform 0.35s cubic-bezier(.2,.9,.3,1);
+  }
+  #panel-a.open { transform: translateX(0); }
+  #panel-a .panel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+
+  /* ---- Variant B: centered modal ---- */
+  #modal-b-backdrop {
+    position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+  }
+  #modal-b-backdrop.open { opacity: 1; pointer-events: auto; }
+  #modal-b {
+    width: 520px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
+    background: rgba(14,15,22,0.92); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px; padding: 32px 34px; box-shadow: 0 30px 90px rgba(0,0,0,0.6);
+    transform: scale(0.94) translateY(10px); transition: transform 0.25s cubic-bezier(.2,.9,.3,1);
+  }
+  #modal-b-backdrop.open #modal-b { transform: scale(1) translateY(0); }
+  #modal-b .panel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+
+  /* ---- Variant C: full-page takeover ---- */
+  #page-c {
+    position: fixed; inset: 0; z-index: 15; background: #05060a;
+    opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
+    overflow-y: auto;
+  }
+  #page-c.open { opacity: 1; pointer-events: auto; }
+  #page-c .page-inner { max-width: 640px; margin: 0 auto; padding: 60px 32px 100px; }
+  #page-c .breadcrumb {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; opacity: 0.6;
+    cursor: pointer; margin-bottom: 32px; border: none; background: none; color: inherit; padding: 0;
+  }
+  #page-c .breadcrumb:hover { opacity: 1; }
+  #page-c .detail-content h2 { font-size: 34px; }
+</style>
+
+<div id="graph-container"></div>
+<div id="hud">
+  <div class="title">Move families</div>
+  <div id="legend"></div>
+</div>
+<div id="variant-name">
+  <div class="k">INTERACTION</div>
+  <div class="n" id="variant-name-n"></div>
+  <div class="d" id="variant-name-d"></div>
+</div>
+<div id="hint">Click a node</div>
+<div id="tooltip"></div>
+
+<!-- Variant A: overlay side panel, graph stays visible/dimmed behind it -->
+<div id="panel-a">
+  <div class="panel-header">
+    <div></div>
+    <button class="close-btn" id="panel-a-close">&times;</button>
+  </div>
+  <div class="detail-content" id="panel-a-content"></div>
+</div>
+
+<!-- Variant B: centered modal over a dimmed/blurred graph -->
+<div id="modal-b-backdrop">
+  <div id="modal-b">
+    <div class="panel-header">
+      <div></div>
+      <button class="close-btn" id="modal-b-close">&times;</button>
+    </div>
+    <div class="detail-content" id="modal-b-content"></div>
+  </div>
+</div>
+
+<!-- Variant C: full-page takeover, graph fully replaced -->
+<div id="page-c">
+  <div class="page-inner">
+    <button class="breadcrumb" id="page-c-back">&#8592; Back to graph</button>
+    <div class="detail-content" id="page-c-content"></div>
+  </div>
+</div>
+
+<div id="switcher">
+  <button class="arrow" id="prev">&#8592;</button>
+  <div class="label"><b id="switcher-label"></b><span class="env" id="switcher-env">prototype — throwaway, not production</span></div>
+  <button class="arrow" id="next">&#8594;</button>
+</div>
