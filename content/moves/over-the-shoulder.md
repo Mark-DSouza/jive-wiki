@@ -1,6 +1,7 @@
 ---
 name: Over the Shoulder
 transitions_out: [windmill, cradle]
+cluster: holds-lifts
 ---
 
 ## Description

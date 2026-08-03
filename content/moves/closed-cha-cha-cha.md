@@ -1,6 +1,7 @@
 ---
 name: Closed Cha Cha Cha
 transitions_out: []
+cluster: cha-cha-cha
 ---
 
 ## Description

@@ -1,6 +1,7 @@
 ---
 name: Flick
 transitions_out: []
+cluster: holds-lifts
 ---
 
 ## Description

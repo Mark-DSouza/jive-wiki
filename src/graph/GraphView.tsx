@@ -1,6 +1,50 @@
+import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef } from 'react'
 import ForceGraph3D, { type ForceGraph3DInstance } from '3d-force-graph'
+import * as THREE from 'three'
+import { CLUSTER_IDS, type GraphLink, type GraphNode } from './compileGraph.ts'
 import { loadGraphData } from './loadMoves.ts'
+import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
+
+function addStarfield(scene: THREE.Scene, count: number): void {
+  const positions = new Float32Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    const radius = 400 + Math.random() * 600
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta)
+    positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta)
+    positions[i * 3 + 2] = radius * Math.cos(phi)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const material = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 1.1,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.55,
+  })
+  scene.add(new THREE.Points(geometry, material))
+}
+
+function makeNodeObject(node: GraphNode): THREE.Object3D {
+  const color = obsidianVoid.clusterColors[node.cluster]
+  const size =
+    obsidianVoid.nodeBaseSize + node.degree * obsidianVoid.nodeSizePerDegree
+  const geometry = new THREE.SphereGeometry(size, 16, 16)
+  const material = new THREE.MeshLambertMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.65,
+    transparent: true,
+    opacity: 0.95,
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.userData.nodeId = node.id
+  return mesh
+}
 
 function GraphView() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -10,10 +54,39 @@ function GraphView() {
     const container = containerRef.current
     if (!container) return
 
-    const graph: ForceGraph3DInstance = new ForceGraph3D(container)
+    const graph = new ForceGraph3D(
+      container,
+    ) as unknown as ForceGraph3DInstance<GraphNode, GraphLink>
+
+    graph
       .graphData(graphData)
       .width(container.clientWidth)
       .height(container.clientHeight)
+      .backgroundColor(obsidianVoid.bg)
+      .nodeThreeObject(makeNodeObject)
+      .nodeThreeObjectExtend(false)
+      .nodeLabel((node) => node.name)
+      .linkColor(() => obsidianVoid.linkColor)
+      .linkWidth(obsidianVoid.linkWidth)
+      .linkDirectionalArrowLength(obsidianVoid.arrowLength)
+      .linkDirectionalArrowRelPos(1)
+
+    addStarfield(graph.scene(), obsidianVoid.starCount)
+
+    const initialCamera = graph.cameraPosition()
+    let orbitAngle = Math.atan2(initialCamera.x, initialCamera.z) || 0
+    graph.onEngineTick(() => {
+      orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
+      const camPos = graph.cameraPosition()
+      const radius = Math.hypot(camPos.x, camPos.z) || 260
+      graph.cameraPosition({
+        x: radius * Math.sin(orbitAngle),
+        y: camPos.y,
+        z: radius * Math.cos(orbitAngle),
+      })
+    })
+
+    window.__jiveGraph = graph
 
     const handleResize = () => {
       graph.width(container.clientWidth).height(container.clientHeight)
@@ -22,13 +95,71 @@ function GraphView() {
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      delete window.__jiveGraph
       // `_destructor` is 3d-force-graph's own documented teardown method
       // (frees the WebGL context/renderer) despite the underscore prefix.
       graph._destructor()
     }
   }, [graphData])
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+  return (
+    <div style={wrapperStyle}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <div data-testid="graph-legend" style={legendStyle}>
+        {CLUSTER_IDS.map((clusterId) => (
+          <div
+            key={clusterId}
+            data-testid={`legend-row-${clusterId}`}
+            style={legendRowStyle}
+          >
+            <span
+              data-testid={`legend-swatch-${clusterId}`}
+              style={{
+                ...swatchStyle,
+                background: obsidianVoid.clusterColors[clusterId],
+              }}
+            />
+            <span>{CLUSTER_LABELS[clusterId]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const wrapperStyle: CSSProperties = {
+  position: 'relative',
+  width: '100%',
+  height: '100%',
+  fontFamily: obsidianVoid.fontFamily,
+}
+
+const legendStyle: CSSProperties = {
+  position: 'absolute',
+  bottom: '1em',
+  left: '1em',
+  padding: '0.6em 0.9em',
+  borderRadius: '0.5em',
+  background: 'rgba(5, 6, 10, 0.55)',
+  color: '#f4f4f5',
+  fontSize: '0.85em',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.4em',
+  pointerEvents: 'none',
+}
+
+const legendRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5em',
+}
+
+const swatchStyle: CSSProperties = {
+  display: 'inline-block',
+  width: '0.7em',
+  height: '0.7em',
+  borderRadius: '50%',
 }
 
 export default GraphView
