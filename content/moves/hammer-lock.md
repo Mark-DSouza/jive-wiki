@@ -1,6 +1,7 @@
 ---
 name: Hammer Lock
 transitions_out: [spin, around-the-world]
+cluster: holds-lifts
 ---
 
 ## Description

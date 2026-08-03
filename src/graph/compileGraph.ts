@@ -3,9 +3,20 @@ export interface MoveFile {
   content: string
 }
 
+export const CLUSTER_IDS = [
+  'cha-cha-cha',
+  'turns-spins',
+  'circle-cradle',
+  'holds-lifts',
+] as const
+
+export type ClusterId = (typeof CLUSTER_IDS)[number]
+
 export interface GraphNode {
   id: string
   name: string
+  cluster: ClusterId
+  degree: number
 }
 
 export interface GraphLink {
@@ -42,6 +53,21 @@ function parseName(filename: string, content: string): string {
   ).trim()
 }
 
+function parseCluster(filename: string, content: string): ClusterId {
+  const raw = matchFrontmatterField(
+    filename,
+    content,
+    'cluster',
+    /^cluster:\s*(.+)$/m,
+  ).trim()
+  if (!(CLUSTER_IDS as readonly string[]).includes(raw)) {
+    throw new Error(
+      `Move file "${filename}" has an invalid "cluster" value "${raw}"; expected one of ${CLUSTER_IDS.join(', ')}.`,
+    )
+  }
+  return raw as ClusterId
+}
+
 function parseTransitionsOut(filename: string, content: string): string[] {
   const inner = matchFrontmatterField(
     filename,
@@ -74,6 +100,8 @@ export function compileGraph(files: MoveFile[]): GraphData {
   const nodes = files.map((file) => ({
     id: slugify(file.filename),
     name: parseName(file.filename, file.content),
+    cluster: parseCluster(file.filename, file.content),
+    degree: 0,
   }))
 
   const slugs = new Set(nodes.map((node) => node.id))
@@ -89,6 +117,15 @@ export function compileGraph(files: MoveFile[]): GraphData {
       return { source, target }
     })
   })
+
+  const degreeById = new Map<string, number>()
+  for (const link of links) {
+    degreeById.set(link.source, (degreeById.get(link.source) ?? 0) + 1)
+    degreeById.set(link.target, (degreeById.get(link.target) ?? 0) + 1)
+  }
+  for (const node of nodes) {
+    node.degree = degreeById.get(node.id) ?? 0
+  }
 
   return { nodes, links }
 }

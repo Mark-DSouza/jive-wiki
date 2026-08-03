@@ -1,6 +1,7 @@
 ---
 name: Turn
 transitions_out: []
+cluster: turns-spins
 ---
 
 ## Description

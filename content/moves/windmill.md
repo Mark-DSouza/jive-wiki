@@ -1,6 +1,7 @@
 ---
 name: Windmill
 transitions_out: []
+cluster: holds-lifts
 ---
 
 ## Description

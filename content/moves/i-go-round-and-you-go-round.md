@@ -1,6 +1,7 @@
 ---
 name: I Go Round and You Go Round
 transitions_out: [cradle]
+cluster: circle-cradle
 ---
 
 ## Description

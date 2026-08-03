@@ -1,6 +1,7 @@
 ---
 name: Around the World
 transitions_out: [cradle]
+cluster: circle-cradle
 ---
 
 ## Description

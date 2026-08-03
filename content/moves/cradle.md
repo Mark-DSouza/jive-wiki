@@ -1,6 +1,7 @@
 ---
 name: Cradle
 transitions_out: []
+cluster: circle-cradle
 ---
 
 ## Description
