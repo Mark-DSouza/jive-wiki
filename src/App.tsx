@@ -1,10 +1,22 @@
+import type { CSSProperties } from 'react'
+import GraphView from './graph/GraphView.tsx'
+
 function App() {
   return (
-    <main>
-      <h1>Jive Moves Graph</h1>
-      <p>The interactive move graph lands here in a later ticket.</p>
+    <main style={{ height: '100vh' }}>
+      <h1 style={visuallyHidden}>Jive Moves Graph</h1>
+      <GraphView />
     </main>
   )
+}
+
+const visuallyHidden: CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
 }
 
 export default App
