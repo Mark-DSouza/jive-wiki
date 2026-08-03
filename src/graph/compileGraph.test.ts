@@ -1,15 +1,28 @@
 import { describe, expect, test } from 'vitest'
-import { compileGraph, type ClusterId } from './compileGraph.ts'
+import {
+  compileGraph,
+  type ClusterId,
+  type MoveTemplate,
+} from './compileGraph.ts'
+
+const BLANK_TEMPLATE: MoveTemplate = {
+  description: '',
+  steps: '',
+  holdHandPosition: '',
+  lead: '',
+  notes: '',
+}
 
 function moveFile(
   filename: string,
   name: string,
   transitionsOut: string[],
   cluster: ClusterId = 'circle-cradle',
+  body = '',
 ) {
   return {
     filename,
-    content: `---\nname: ${name}\ntransitions_out: [${transitionsOut.join(', ')}]\ncluster: ${cluster}\n---\n`,
+    content: `---\nname: ${name}\ntransitions_out: [${transitionsOut.join(', ')}]\ncluster: ${cluster}\n---\n${body}`,
   }
 }
 
@@ -21,7 +34,13 @@ describe('compileGraph', () => {
 
     expect(result).toEqual({
       nodes: [
-        { id: 'cradle', name: 'Cradle', cluster: 'circle-cradle', degree: 0 },
+        {
+          id: 'cradle',
+          name: 'Cradle',
+          cluster: 'circle-cradle',
+          degree: 0,
+          template: BLANK_TEMPLATE,
+        },
       ],
       links: [],
     })
@@ -40,13 +59,26 @@ describe('compileGraph', () => {
     ])
 
     expect(result.nodes).toEqual([
-      { id: 'cradle', name: 'Cradle', cluster: 'circle-cradle', degree: 1 },
-      { id: 'spin', name: 'Spin', cluster: 'turns-spins', degree: 0 },
+      {
+        id: 'cradle',
+        name: 'Cradle',
+        cluster: 'circle-cradle',
+        degree: 1,
+        template: BLANK_TEMPLATE,
+      },
+      {
+        id: 'spin',
+        name: 'Spin',
+        cluster: 'turns-spins',
+        degree: 0,
+        template: BLANK_TEMPLATE,
+      },
       {
         id: 'around-the-world',
         name: 'Around the World',
         cluster: 'circle-cradle',
         degree: 1,
+        template: BLANK_TEMPLATE,
       },
     ])
   })
@@ -187,9 +219,90 @@ describe('compileGraph', () => {
 
     expect(result).toEqual({
       nodes: [
-        { id: 'cradle', name: 'Cradle', cluster: 'circle-cradle', degree: 0 },
+        {
+          id: 'cradle',
+          name: 'Cradle',
+          cluster: 'circle-cradle',
+          degree: 0,
+          template: {
+            ...BLANK_TEMPLATE,
+            notes:
+              'transitions_out: [not-a-real-target]\nname: Not The Real Name\ncluster: holds-lifts',
+          },
+        },
       ],
       links: [],
+    })
+  })
+
+  describe('template field parsing', () => {
+    test('parses each body section into its own template field', () => {
+      const files = [
+        moveFile(
+          'closed-cha-cha-cha.md',
+          'Closed Cha Cha Cha',
+          [],
+          'cha-cha-cha',
+          [
+            '\n',
+            '## Description\n\nA cha cha cha figure done in closed hold.\n\n',
+            '## Steps\n\n',
+            '## Hold/hand position\n\nClosed hold.\n\n',
+            '## Lead\n\n- Extend your left arm.\n- Push and turn her.\n\n',
+            '## Notes/variations\n\nAlso performable in open hold.\n',
+          ].join(''),
+        ),
+      ]
+
+      const result = compileGraph(files)
+
+      expect(result.nodes[0]?.template).toEqual({
+        description: 'A cha cha cha figure done in closed hold.',
+        steps: '',
+        holdHandPosition: 'Closed hold.',
+        lead: '- Extend your left arm.\n- Push and turn her.',
+        notes: 'Also performable in open hold.',
+      })
+    })
+
+    test('a move file with no body sections parses to an all-blank template', () => {
+      const files = [moveFile('turn.md', 'Turn', [], 'turns-spins')]
+
+      const result = compileGraph(files)
+
+      expect(result.nodes[0]?.template).toEqual(BLANK_TEMPLATE)
+    })
+
+    test('sections present but empty parse to an empty string, not undefined', () => {
+      const files = [
+        moveFile(
+          'windmill.md',
+          'Windmill',
+          [],
+          'holds-lifts',
+          '\n## Description\n\n## Steps\n\n## Hold/hand position\n\n## Lead\n\n## Notes/variations\n',
+        ),
+      ]
+
+      const result = compileGraph(files)
+
+      expect(result.nodes[0]?.template).toEqual(BLANK_TEMPLATE)
+    })
+
+    test('parses a plain-text (non-bulleted) Lead section verbatim', () => {
+      const files = [
+        moveFile(
+          'flick.md',
+          'Flick',
+          [],
+          'holds-lifts',
+          '\n## Description\n\n## Steps\n\n## Hold/hand position\n\n## Lead\n\nFlick the hand in front.\n\n## Notes/variations\n',
+        ),
+      ]
+
+      const result = compileGraph(files)
+
+      expect(result.nodes[0]?.template.lead).toBe('Flick the hand in front.')
     })
   })
 })
