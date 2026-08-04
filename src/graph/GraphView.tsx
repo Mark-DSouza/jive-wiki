@@ -11,6 +11,11 @@ import {
 } from './compileGraph.ts'
 import DetailPanel from './DetailPanel.tsx'
 import { loadGraphData } from './loadMoves.ts'
+import {
+  NodeTapPrototypeSwitcher,
+  useNodeTapVariant,
+  type NodeTapVariantKey,
+} from './NodeTapPrototype.tsx'
 import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
 
 // `controls()` is typed `object` upstream; this is the subset of
@@ -57,7 +62,11 @@ function addStarfield(scene: THREE.Scene, count: number): void {
   scene.add(new THREE.Points(geometry, material))
 }
 
-function makeNodeObject(node: GraphNode): THREE.Object3D {
+function makeNodeObject(
+  node: GraphNode,
+  variant: NodeTapVariantKey,
+  meshRegistry: Map<string, THREE.Mesh>,
+): THREE.Object3D {
   const color = obsidianVoid.clusterColors[node.cluster]
   const size =
     obsidianVoid.nodeBaseSize + node.degree * obsidianVoid.nodeSizePerDegree
@@ -71,7 +80,28 @@ function makeNodeObject(node: GraphNode): THREE.Object3D {
   })
   const mesh = new THREE.Mesh(geometry, material)
   mesh.userData.nodeId = node.id
-  return mesh
+  meshRegistry.set(node.id, mesh)
+
+  if (variant === 'A') return mesh
+
+  // PROTOTYPE (issue #20), variants B/C: pad the hit-target with an
+  // invisible sphere past the visible mesh's radius. 3d-force-graph
+  // resolves a raycast hit by walking up the parent chain to whichever
+  // object it tagged with the node's data, so a plain sibling mesh in a
+  // group is enough — no custom raycasting needed.
+  const hitRadius = size + 6
+  const hitGeometry = new THREE.SphereGeometry(hitRadius, 12, 12)
+  const hitMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  })
+  const hitMesh = new THREE.Mesh(hitGeometry, hitMaterial)
+
+  const group = new THREE.Group()
+  group.add(mesh)
+  group.add(hitMesh)
+  return group
 }
 
 function GraphView() {
@@ -80,6 +110,7 @@ function GraphView() {
     null,
   )
   const graphData = useMemo(() => loadGraphData(), [])
+  const [nodeTapVariant, setNodeTapVariant] = useNodeTapVariant()
   const [openNodeId, setOpenNodeId] = useState<string | null>(null)
   const [displayedNodeId, setDisplayedNodeId] = useState<string | null>(null)
   const isPanelOpen = openNodeId !== null
@@ -168,6 +199,15 @@ function GraphView() {
     container.addEventListener('pointermove', handlePointerMove)
     container.addEventListener('pointerup', handlePointerUp)
 
+    // PROTOTYPE (issue #20), variant C only: a brief scale pulse on the
+    // tapped node's visible mesh, standing in for the hover-preview step
+    // touch has no equivalent of. Driven off the existing engine tick
+    // rather than its own rAF loop.
+    const nodeMeshRegistry = new Map<string, THREE.Mesh>()
+    const pulseDurationMs = 220
+    const pulsePeakScale = 1.35
+    let activePulse: { mesh: THREE.Mesh; startTime: number } | null = null
+
     graph
       // three-forcegraph mutates each link in place, replacing its
       // string source/target with the resolved node object. Hand it
@@ -182,7 +222,9 @@ function GraphView() {
       .width(container.clientWidth)
       .height(container.clientHeight)
       .backgroundColor(obsidianVoid.bg)
-      .nodeThreeObject(makeNodeObject)
+      .nodeThreeObject((node) =>
+        makeNodeObject(node, nodeTapVariant, nodeMeshRegistry),
+      )
       .nodeThreeObjectExtend(false)
       .nodeLabel((node) => node.name)
       .linkColor(() => obsidianVoid.linkColor)
@@ -190,6 +232,10 @@ function GraphView() {
       .linkDirectionalArrowLength(obsidianVoid.arrowLength)
       .linkDirectionalArrowRelPos(1)
       .onNodeClick((node) => {
+        if (nodeTapVariant === 'C') {
+          const mesh = nodeMeshRegistry.get(node.id)
+          if (mesh) activePulse = { mesh, startTime: performance.now() }
+        }
         flyToNode(graph, node)
         setOpenNodeId(node.id)
       })
@@ -200,15 +246,28 @@ function GraphView() {
     addStarfield(graph.scene(), obsidianVoid.starCount)
 
     graph.onEngineTick(() => {
-      if (!autoOrbitEnabled) return
-      orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
-      const camPos = graph.cameraPosition()
-      const radius = Math.hypot(camPos.x, camPos.z) || 260
-      graph.cameraPosition({
-        x: radius * Math.sin(orbitAngle),
-        y: camPos.y,
-        z: radius * Math.cos(orbitAngle),
-      })
+      if (autoOrbitEnabled) {
+        orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
+        const camPos = graph.cameraPosition()
+        const radius = Math.hypot(camPos.x, camPos.z) || 260
+        graph.cameraPosition({
+          x: radius * Math.sin(orbitAngle),
+          y: camPos.y,
+          z: radius * Math.cos(orbitAngle),
+        })
+      }
+
+      if (activePulse) {
+        const elapsed = performance.now() - activePulse.startTime
+        if (elapsed >= pulseDurationMs) {
+          activePulse.mesh.scale.setScalar(1)
+          activePulse = null
+        } else {
+          const t = elapsed / pulseDurationMs
+          const scale = 1 + Math.sin(t * Math.PI) * (pulsePeakScale - 1)
+          activePulse.mesh.scale.setScalar(scale)
+        }
+      }
     })
 
     let isLayoutStable = false
@@ -242,7 +301,7 @@ function GraphView() {
       // (frees the WebGL context/renderer) despite the underscore prefix.
       graph._destructor()
     }
-  }, [graphData])
+  }, [graphData, nodeTapVariant])
 
   return (
     <div style={wrapperStyle}>
@@ -281,6 +340,10 @@ function GraphView() {
           </div>
         ))}
       </div>
+      <NodeTapPrototypeSwitcher
+        variant={nodeTapVariant}
+        onChange={setNodeTapVariant}
+      />
     </div>
   )
 }
