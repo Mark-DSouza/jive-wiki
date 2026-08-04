@@ -201,12 +201,32 @@ function GraphView() {
 
     // PROTOTYPE (issue #20), variant C only: a brief scale pulse on the
     // tapped node's visible mesh, standing in for the hover-preview step
-    // touch has no equivalent of. Driven off the existing engine tick
-    // rather than its own rAF loop.
+    // touch has no equivalent of. Runs its own rAF loop rather than
+    // piggybacking on graph.onEngineTick() — three-forcegraph stops firing
+    // that callback for good once the physics sim cools down (default
+    // cooldownTime: 15s after load), which would silently kill the pulse
+    // (and already kills auto-orbit, a separate pre-existing issue) on
+    // any tap that happens after the graph has settled.
     const nodeMeshRegistry = new Map<string, THREE.Mesh>()
     const pulseDurationMs = 220
     const pulsePeakScale = 1.35
     let activePulse: { mesh: THREE.Mesh; startTime: number } | null = null
+    let pulseFrameId: number | null = null
+
+    function stepPulse(): void {
+      pulseFrameId = null
+      if (!activePulse) return
+      const elapsed = performance.now() - activePulse.startTime
+      if (elapsed >= pulseDurationMs) {
+        activePulse.mesh.scale.setScalar(1)
+        activePulse = null
+        return
+      }
+      const t = elapsed / pulseDurationMs
+      const scale = 1 + Math.sin(t * Math.PI) * (pulsePeakScale - 1)
+      activePulse.mesh.scale.setScalar(scale)
+      pulseFrameId = requestAnimationFrame(stepPulse)
+    }
 
     graph
       // three-forcegraph mutates each link in place, replacing its
@@ -234,7 +254,10 @@ function GraphView() {
       .onNodeClick((node) => {
         if (nodeTapVariant === 'C') {
           const mesh = nodeMeshRegistry.get(node.id)
-          if (mesh) activePulse = { mesh, startTime: performance.now() }
+          if (mesh) {
+            activePulse = { mesh, startTime: performance.now() }
+            pulseFrameId ??= requestAnimationFrame(stepPulse)
+          }
         }
         flyToNode(graph, node)
         setOpenNodeId(node.id)
@@ -246,28 +269,15 @@ function GraphView() {
     addStarfield(graph.scene(), obsidianVoid.starCount)
 
     graph.onEngineTick(() => {
-      if (autoOrbitEnabled) {
-        orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
-        const camPos = graph.cameraPosition()
-        const radius = Math.hypot(camPos.x, camPos.z) || 260
-        graph.cameraPosition({
-          x: radius * Math.sin(orbitAngle),
-          y: camPos.y,
-          z: radius * Math.cos(orbitAngle),
-        })
-      }
-
-      if (activePulse) {
-        const elapsed = performance.now() - activePulse.startTime
-        if (elapsed >= pulseDurationMs) {
-          activePulse.mesh.scale.setScalar(1)
-          activePulse = null
-        } else {
-          const t = elapsed / pulseDurationMs
-          const scale = 1 + Math.sin(t * Math.PI) * (pulsePeakScale - 1)
-          activePulse.mesh.scale.setScalar(scale)
-        }
-      }
+      if (!autoOrbitEnabled) return
+      orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
+      const camPos = graph.cameraPosition()
+      const radius = Math.hypot(camPos.x, camPos.z) || 260
+      graph.cameraPosition({
+        x: radius * Math.sin(orbitAngle),
+        y: camPos.y,
+        z: radius * Math.cos(orbitAngle),
+      })
     })
 
     let isLayoutStable = false
@@ -294,6 +304,7 @@ function GraphView() {
       container.removeEventListener('pointerdown', handlePointerDown)
       container.removeEventListener('pointermove', handlePointerMove)
       container.removeEventListener('pointerup', handlePointerUp)
+      if (pulseFrameId !== null) cancelAnimationFrame(pulseFrameId)
       delete window.__jiveGraph
       delete window.__jiveGraphControls
       graphRef.current = null
