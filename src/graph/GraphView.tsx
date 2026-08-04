@@ -13,6 +13,13 @@ import DetailPanel from './DetailPanel.tsx'
 import { loadGraphData } from './loadMoves.ts'
 import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
 
+// `controls()` is typed `object` upstream; this is the subset of
+// TrackballControls' API we tune for touch.
+interface TrackballControlsLike {
+  panSpeed: number
+  zoomSpeed: number
+}
+
 function flyToNode(
   graph: ForceGraph3DInstance<GraphNode, GraphLink>,
   node: PositionedGraphNode,
@@ -114,6 +121,53 @@ function GraphView() {
       container,
     ) as unknown as ForceGraph3DInstance<GraphNode, GraphLink>
 
+    const initialCamera = graph.cameraPosition()
+    let orbitAngle = Math.atan2(initialCamera.x, initialCamera.z) || 0
+    let autoOrbitEnabled = true
+
+    // Damp pan/zoom for touch (defaults are 0.3/1.2) rather than disabling
+    // pan outright — a two-finger drag should still be able to shift the
+    // view on purpose, just without overshooting on a small screen.
+    const controls = graph.controls() as unknown as TrackballControlsLike
+    controls.panSpeed = 0.15
+    controls.zoomSpeed = 1.0
+
+    // Auto-orbit unconditionally repositions the camera every tick, fighting
+    // the user's own touch/mouse drag. Pause it for the duration of any
+    // actual drag and resume the moment it ends. Deliberately doesn't use
+    // TrackballControls' own 'start'/'end' events — those fire on every
+    // pointerdown/up including a plain tap-to-select-a-node, which would
+    // re-enable auto-orbit a frame before that same tap's fly-to animation
+    // starts, fighting it. Tracking real pointer movement past a small
+    // threshold ensures a tap is never mistaken for a drag.
+    const dragThresholdPx = 4
+    let dragOrigin: { x: number; y: number } | null = null
+    let isDragging = false
+    const handlePointerDown = (event: PointerEvent) => {
+      dragOrigin = { x: event.clientX, y: event.clientY }
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!dragOrigin || isDragging) return
+      const moved = Math.hypot(
+        event.clientX - dragOrigin.x,
+        event.clientY - dragOrigin.y,
+      )
+      if (moved > dragThresholdPx) {
+        isDragging = true
+        autoOrbitEnabled = false
+      }
+    }
+    const handlePointerUp = () => {
+      dragOrigin = null
+      if (isDragging) {
+        isDragging = false
+        autoOrbitEnabled = true
+      }
+    }
+    container.addEventListener('pointerdown', handlePointerDown)
+    container.addEventListener('pointermove', handlePointerMove)
+    container.addEventListener('pointerup', handlePointerUp)
+
     graph
       // three-forcegraph mutates each link in place, replacing its
       // string source/target with the resolved node object. Hand it
@@ -145,9 +199,6 @@ function GraphView() {
 
     addStarfield(graph.scene(), obsidianVoid.starCount)
 
-    const initialCamera = graph.cameraPosition()
-    let orbitAngle = Math.atan2(initialCamera.x, initialCamera.z) || 0
-    let autoOrbitEnabled = true
     graph.onEngineTick(() => {
       if (!autoOrbitEnabled) return
       orbitAngle += obsidianVoid.autoOrbitSpeed * 0.01
@@ -181,6 +232,9 @@ function GraphView() {
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      container.removeEventListener('pointerdown', handlePointerDown)
+      container.removeEventListener('pointermove', handlePointerMove)
+      container.removeEventListener('pointerup', handlePointerUp)
       delete window.__jiveGraph
       delete window.__jiveGraphControls
       graphRef.current = null
