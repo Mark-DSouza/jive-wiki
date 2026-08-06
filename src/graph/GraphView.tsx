@@ -11,7 +11,27 @@ import {
 } from './compileGraph.ts'
 import DetailPanel from './DetailPanel.tsx'
 import { loadGraphData } from './loadMoves.ts'
+import {
+  VARIANTS,
+  type Variant,
+} from './prototype-mobile-detail-panel/content.ts'
+import PrototypeSwitcher from './prototype-mobile-detail-panel/PrototypeSwitcher.tsx'
+import VariantA from './prototype-mobile-detail-panel/VariantA.tsx'
+import VariantB from './prototype-mobile-detail-panel/VariantB.tsx'
+import VariantC from './prototype-mobile-detail-panel/VariantC.tsx'
 import { CLUSTER_LABELS, obsidianVoid } from './theme.ts'
+
+// PROTOTYPE wiring for wayfinder ticket #21 (phone-portrait detail panel).
+// Dev-only: reads/writes `?variant=` and renders the switcher. Never active
+// in a production build. Delete this block, the three Variant* imports, and
+// the `prototype-mobile-detail-panel/` folder once the ticket is resolved.
+function readVariantFromUrl(): Variant {
+  if (!import.meta.env.DEV) return 'default'
+  const raw = new URLSearchParams(window.location.search).get('variant')
+  return (VARIANTS as readonly string[]).includes(raw ?? '')
+    ? (raw as Variant)
+    : 'default'
+}
 
 // `controls()` is typed `object` upstream; this is the subset of
 // TrackballControls' API we tune for touch.
@@ -83,6 +103,19 @@ function GraphView() {
   const [openNodeId, setOpenNodeId] = useState<string | null>(null)
   const [displayedNodeId, setDisplayedNodeId] = useState<string | null>(null)
   const isPanelOpen = openNodeId !== null
+  const [prototypeVariant, setPrototypeVariant] =
+    useState<Variant>(readVariantFromUrl)
+
+  function handlePrototypeVariantChange(variant: Variant): void {
+    setPrototypeVariant(variant)
+    const url = new URL(window.location.href)
+    if (variant === 'default') {
+      url.searchParams.delete('variant')
+    } else {
+      url.searchParams.set('variant', variant)
+    }
+    window.history.replaceState(null, '', url)
+  }
   // Keep showing the last-open move's content while the panel slides out,
   // rather than clearing it (which would flash an empty panel mid-animation).
   if (openNodeId !== null && openNodeId !== displayedNodeId) {
@@ -254,15 +287,56 @@ function GraphView() {
           filter: isPanelOpen ? obsidianVoid.dimmedFilter : 'none',
         }}
       />
-      <DetailPanel
-        graphData={graphData}
-        isOpen={isPanelOpen}
-        moveId={displayedNodeId}
-        onClose={() => {
-          setOpenNodeId(null)
-        }}
-        onSelectMove={handleSelectMove}
-      />
+      {prototypeVariant === 'default' && (
+        <DetailPanel
+          graphData={graphData}
+          isOpen={isPanelOpen}
+          moveId={displayedNodeId}
+          onClose={() => {
+            setOpenNodeId(null)
+          }}
+          onSelectMove={handleSelectMove}
+        />
+      )}
+      {prototypeVariant === 'A' && (
+        <VariantA
+          graphData={graphData}
+          isOpen={isPanelOpen}
+          moveId={displayedNodeId}
+          onClose={() => {
+            setOpenNodeId(null)
+          }}
+          onSelectMove={handleSelectMove}
+        />
+      )}
+      {prototypeVariant === 'B' && (
+        <VariantB
+          graphData={graphData}
+          isOpen={isPanelOpen}
+          moveId={displayedNodeId}
+          onClose={() => {
+            setOpenNodeId(null)
+          }}
+          onSelectMove={handleSelectMove}
+        />
+      )}
+      {prototypeVariant === 'C' && (
+        <VariantC
+          graphData={graphData}
+          isOpen={isPanelOpen}
+          moveId={displayedNodeId}
+          onClose={() => {
+            setOpenNodeId(null)
+          }}
+          onSelectMove={handleSelectMove}
+        />
+      )}
+      {import.meta.env.DEV && (
+        <PrototypeSwitcher
+          current={prototypeVariant}
+          onChange={handlePrototypeVariantChange}
+        />
+      )}
       <div data-testid="graph-legend" style={legendStyle}>
         {CLUSTER_IDS.map((clusterId) => (
           <div
